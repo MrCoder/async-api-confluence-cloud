@@ -1,11 +1,9 @@
 const SpeedMeasureWebpackPlugin = require('speed-measure-webpack-plugin');
 const { ESBuildMinifyPlugin } = require('esbuild-loader')
 const { execSync } = require('child_process');
-// const descriptor = require('./scripts/descriptor');
 
 process.env.VUE_APP_GIT_HASH = execSync('git rev-parse --short HEAD').toString().trim()
 process.env.VUE_APP_GIT_BRANCH = execSync('git branch --show-current').toString().trim()
-// https://stackoverflow.com/a/45993185/529187
 process.env.VUE_APP_GIT_TAG = execSync('git describe --tags --always --abbrev=0').toString().trim()
 console.log(`Building ${process.env.VUE_APP_GIT_TAG} (${process.env.VUE_APP_GIT_HASH}) on ${process.env.VUE_APP_GIT_BRANCH}`)
 
@@ -39,37 +37,40 @@ module.exports = {
     }
   },
   chainWebpack: config => {
+    // Use esbuild for JavaScript/TypeScript transpilation
     const rule = config.module.rule('js');
-    // clear babel-loader
     rule.uses.clear()
-
-    // add esbuild-loader
-    rule.use('esbuild-loader').loader('esbuild-loader');
+    rule.use('esbuild-loader').loader('esbuild-loader').options({
+      target: 'es2022',
+      format: 'esm'
+    });
 
     const ruleTs = config.module.rule('ts');
-    // clear babel-loader
     ruleTs.uses.clear()
+    ruleTs.use('esbuild-loader').loader('esbuild-loader').options({
+      loader: 'ts',
+      target: 'es2022',
+      format: 'esm',
+      tsconfigRaw: require('./tsconfig.json')
+    });
 
-    // add esbuild-loader
-    ruleTs.use('esbuild-loader').loader('esbuild-loader')
-      .options( {
-          loader: 'ts', // 如果使用了 ts, 或者 vue 的 class 装饰器，则需要加上这个 option 配置， 否则会报错： ERROR: Unexpected "@"
-          target: 'es2015',
-          tsconfigRaw: require('./tsconfig.json')
-        } );
-
-    // 删除底层 terser, 换用 esbuild-minimize-plugin
+    // Remove terser and use esbuild for minification
     config.optimization.minimizers.delete('terser');
-
-    // 使用 esbuild 优化 css 压缩
     config.optimization
       .minimizer('esbuild')
-      .use(ESBuildMinifyPlugin, [{ minify: true, css: true }]);
+      .use(ESBuildMinifyPlugin, [{ 
+        target: 'es2022',
+        minify: true, 
+        css: true,
+        legalComments: 'none'
+      }]);
 
+    // Optimize chunk splitting for Node.js 22
     const options = module.exports
     const pages = options.pages
     const pageKeys = Object.keys(pages)
     const IS_VENDOR = /[\\/]node_modules[\\/]/
+    
     config.optimization
       .splitChunks({
         cacheGroups: {
@@ -79,16 +80,16 @@ module.exports = {
             chunks: 'initial',
             minChunks: 1,
             test: IS_VENDOR,
-            reuseExistingChunk: false, //        <<< THIS
+            reuseExistingChunk: false,
             enforce: true,
           },
           ...pageKeys.map((key) => ({
             name: `chunk-${key}-vendors`,
-            priority: -1, //                     <<< THIS
+            priority: -1,
             chunks: (chunk) => chunk.name === key,
             minChunks: 1,
             test: IS_VENDOR,
-            reuseExistingChunk: false, //        <<< THIS
+            reuseExistingChunk: false,
             enforce: true,
           })),
           common: {
@@ -111,10 +112,18 @@ module.exports = {
       chunkFormat: 'array-push'
     },
     resolve: {
-      fallback: {"stream": false},
+      fallback: {
+        "stream": false,
+        "crypto": require.resolve("crypto-browserify"),
+        "buffer": require.resolve("buffer")
+      },
       alias: {
-        // 'vue$': 'vue/dist/vue.esm.js' // Full version with template compiler
+        // Keep existing aliases
       }
+    },
+    // Node.js 22 specific optimizations
+    experiments: {
+      topLevelAwait: true
     }
   },
   devServer: {
@@ -126,28 +135,9 @@ module.exports = {
       webSocketURL: 'auto://0.0.0.0:0/ws',
     },
     proxy: {
-      // '/descriptor': {
-      //   target: 'http://localhost:8788/',
-      //   changeOrigin: true
-      // },
-      // '/atlassian-connect-lite.json': {
-      //   target: 'http://localhost:8788/',
-      //   changeOrigin: true
-      // },
-      // '/installed': {
-      //   target: 'http://localhost:8788/',
-      //   changeOrigin: true
-      // },
-      // '/uninstalled': {
-      //   target: 'http://localhost:8788/',
-      //   changeOrigin: true
-      // },
-      // '/attachment': {
-      //   target: 'http://localhost:8788/',
-      //   changeOrigin: true
-      // }
+      // Keep existing proxy configuration
     },
-    compress: true,  // This reduces the app.js from 4.8MB to 1.2MB
+    compress: true,
     onBeforeSetupMiddleware: function (devServer) {
       devServer.app.post(/installed/, function (req, res) {
         res.status(200).send(`OK`);
@@ -155,9 +145,6 @@ module.exports = {
       devServer.app.post(/uninstalled/, function (req, res) {
         res.status(200).send(`OK`);
       })
-      // devServer.app.get(/descriptor/, function (req, res) {
-      //   res.json(descriptor.onRequestGet(req));
-      // })
       devServer.app.get(/attachment/, function (req, res) {
         res.send(`<ac:image> <ri:attachment ri:filename="zenuml-${req.query.uuid}.png" /> </ac:image>`);
       })

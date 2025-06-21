@@ -1,11 +1,11 @@
 {
   "compilerOptions": {
-    "target": "esnext",
-    "module": "esnext",
+    "target": "ES2022",
+    "module": "ESNext",
     "strict": true,
     "jsx": "preserve",
     "importHelpers": true,
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "allowJs": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
@@ -24,7 +24,7 @@
       ]
     },
     "lib": [
-      "esnext",
+      "ES2022",
       "dom",
       "dom.iterable",
       "scripthost"
